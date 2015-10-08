@@ -1,0 +1,63 @@
+aws_acctmgr
+===========
+
+``aws_acctmgr`` synchronizes a local NSS database against Amazon Web Services
+(AWS) Identity and Access Management (IAM) with the primary use-case of
+providing SSH access to AWS EC2 instances for remote administrators [1].
+
+This relies on a new SSH Public Key metadata feature recently added to AWS IAM.
+Note that the AWS documentation currently only mentions this feature in the
+context of the AWS CodeCommit product but the API naming itself has no such
+context.
+
+See:
+    https://docs.aws.amazon.com/IAM/latest/APIReference/API_GetSSHPublicKey.html
+    https://docs.aws.amazon.com/IAM/latest/APIReference/API_ListSSHPublicKeys.html
+
+
+[1] If LDAP is overkill.  If LDAP is not, consider ``nsscache``.
+
+
+Installation
+------------
+
+These instructions have been tested with Debian 8 (Jessie) but should be fairly
+general.
+
+IAM users are not added to the system via traditional mechanisms (e.g.
+``/etc/passwd``).  Instead they are registered in a dedicated directory
+provided by the "libnss-extrausers" package.  The host's ``/etc/nsswitch``
+should have ``extrausers`` appended to the ``passwd`` and ``shadow`` entries.
+
+    passwd:         compat extrausers
+    group:          compat
+    shadow:         compat extrausers
+    gshadow:        files
+
+    hosts:          files dns
+    networks:       files
+
+    protocols:      db files
+    services:       db files
+    ethers:         db files
+    rpc:            db files
+
+    netgroup:       nis
+
+Additionally, "libpam-modules" is required only if home directories should only
+be created on-demand.  On Debian systems, ensure that the line::
+
+    session required pam_mkhomedir.so skel=/etc/skel/ umask=0022
+
+Is added to ``etc/pam.d/common-account``.
+
+
+See:
+    https://packages.debian.org/jessie/libnss-extrausers
+    https://packages.debian.org/jessie/libpam-modules
+
+
+See Also
+--------
+
+https://github.com/google/nsscache
