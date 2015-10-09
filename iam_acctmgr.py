@@ -36,6 +36,7 @@ import botocore.session
 
 LOG = logging.getLogger('iam_acctmgr')
 EPOCH = datetime.datetime.utcfromtimestamp(0)
+IAM_POLLING_INTERVAL = int(os.getenv('IAM_ACCTMGR_POLL_INTERVAL', 60))
 MIN_USER_UID = int(os.getenv('IAM_ACCTMGR_MIN_USER_UID', 10000))
 MAX_USER_UID = int(os.getenv('IAM_ACCTMGR_MAX_USER_UID', 19999))
 IAM_PUB_KEY_FILE = '/etc/iam-pub-ssh-keys'
@@ -257,35 +258,35 @@ def service():
         iam_group = sys.argv[1]
     assert iam_group is not None, 'IAM_ACCTMGR_GROUP env variable is not set'
 
+    prior = None
     while True:
-        prior = None
-        while True:
-            try:
-                pwall, spwall = pwd.getpwall(), spwd.getspall()
-                system_names = set(
-                    user.pw_name for user in pwall if not is_iam_user(user))
-                user_pks = filter_keys(fetch_keys(iam_group), system_names)
-                if prior == user_pks:
-                    # No change - short circuit
-                    continue
-                else:
-                    prior = user_pks
-                LOG.info('Processing user accounts: %s', user_pks)
+        try:
+            pwall, spwall = pwd.getpwall(), spwd.getspall()
+            system_names = set(
+                user.pw_name for user in pwall if not is_iam_user(user))
+            user_pks = filter_keys(fetch_keys(iam_group), system_names)
+            if prior == user_pks:
+                # No change - short circuit
+                time.sleep(IAM_POLLING_INTERVAL)
+                continue
+            else:
+                prior = user_pks
+            LOG.info('Processing user accounts: %s', user_pks)
 
-                extra_passwd, extra_shadow, extra_sudo = process(
-                    user_pks, pwall, spwall)
+            extra_passwd, extra_shadow, extra_sudo = process(
+                user_pks, pwall, spwall)
 
-                write(extra_passwd, EXTRAUSERS_PASSWD)
-                write(extra_shadow, EXTRAUSERS_SHADOW, '0600')
-                write(extra_sudo, SUDOERS_CONFIG, '0400')
+            write(extra_passwd, EXTRAUSERS_PASSWD)
+            write(extra_shadow, EXTRAUSERS_SHADOW, '0600')
+            write(extra_sudo, SUDOERS_CONFIG, '0400')
 
-                with open(IAM_PUB_KEY_FILE, 'w') as keyfd:
-                    json.dump(user_pks, keyfd)
-            # pylint: disable=broad-except
-            except Exception:
-                LOG.error(traceback.format_exc())
-            # pylint: enable=broad-except
-            time.sleep(60)
+            with open(IAM_PUB_KEY_FILE, 'w') as keyfd:
+                json.dump(user_pks, keyfd)
+        # pylint: disable=broad-except
+        except Exception:
+            LOG.error(traceback.format_exc())
+        # pylint: enable=broad-except
+        time.sleep(IAM_POLLING_INTERVAL)
 
 
 def configure_system(argv=None):
